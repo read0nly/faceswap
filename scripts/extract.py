@@ -38,11 +38,10 @@ class Extract():  # pylint:disable=too-few-public-methods
     def __init__(self, arguments):
         logger.debug("Initializing %s: (args: %s", self.__class__.__name__, arguments)
         self._args = arguments
-
         self._output_dir = str(get_folder(self._args.output_dir))
 
         logger.info("Output Directory: %s", self._args.output_dir)
-        self._images = ImagesLoader(self._args.input_dir, load_with_hash=False, fast_count=True)
+        self._images = ImagesLoader(self._args.input_dir, fast_count=True)
         self._alignments = Alignments(self._args, True, self._images.is_video)
 
         self._existing_count = 0
@@ -51,9 +50,12 @@ class Extract():  # pylint:disable=too-few-public-methods
         self._post_process = PostProcess(arguments)
         configfile = self._args.configfile if hasattr(self._args, "configfile") else None
         normalization = None if self._args.normalization == "none" else self._args.normalization
+
+        maskers = ["components", "extended"]
+        maskers += self._args.masker if self._args.masker else []
         self._extractor = Extractor(self._args.detector,
                                     self._args.aligner,
-                                    self._args.masker,
+                                    maskers,
                                     configfile=configfile,
                                     multiprocess=not self._args.singleprocess,
                                     rotate_images=self._args.rotate_images,
@@ -106,7 +108,7 @@ class Extract():  # pylint:disable=too-few-public-methods
     def process(self):
         """ The entry point for triggering the Extraction Process.
 
-        Should only be called from  :class:`lib.cli.ScriptExecutor`
+        Should only be called from  :class:`lib.cli.launcher.ScriptExecutor`
         """
         logger.info('Starting, this may take a while...')
         # from lib.queue_manager import queue_manager ; queue_manager.debug_monitor(3)
@@ -191,7 +193,6 @@ class Extract():  # pylint:disable=too-few-public-methods
         size = self._args.size if hasattr(self._args, "size") else 256
         saver = ImagesSaver(self._output_dir, as_bytes=True)
         exception = False
-        phase_desc = "Extraction"
 
         for phase in range(self._extractor.passes):
             if exception:
@@ -200,11 +201,10 @@ class Extract():  # pylint:disable=too-few-public-methods
             detected_faces = dict()
             self._extractor.launch()
             self._check_thread_error()
-            if self._args.singleprocess:
-                phase_desc = self._extractor.phase.title()
+            ph_desc = "Extraction" if self._extractor.passes == 1 else self._extractor.phase_text
             desc = "Running pass {} of {}: {}".format(phase + 1,
                                                       self._extractor.passes,
-                                                      phase_desc)
+                                                      ph_desc)
             status_bar = tqdm(self._extractor.detected_faces(),
                               total=self._images.process_count,
                               file=sys.stdout,
